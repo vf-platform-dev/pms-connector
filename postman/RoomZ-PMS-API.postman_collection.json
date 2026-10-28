@@ -1,0 +1,827 @@
+{
+  "info": {
+    "_postman_id": "26e1e8f4-cf43-42f4-8dd1-8de01e5d2c49",
+    "name": "RoomZ PMS API v1",
+    "description": "RoomZ PMS public API: availability, rates and bookings.\n\n1. Import this collection and the environment file, pick the environment.\n2. Fill in **pmsUsername** / **pmsPassword** (a PMS admin).\n3. Run **1. Admin > Create API key**. The key is saved into `{{apiKey}}` automatically.\n4. Run anything else. Requests use `Authorization: Bearer {{apiKey}}`.\n\nFull guide: https://github.com/vf-platform-dev/pms-connector (endpoints.md and docs/)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{apiKey}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Default stay dates: 30 days from today, 2 nights. Override checkIn/checkOut in your environment.",
+          "function d(n){ const x = new Date(); x.setDate(x.getDate()+n); return x.toISOString().slice(0,10); }",
+          "if (!pm.environment.get('checkIn') && !pm.collectionVariables.get('checkIn')) {",
+          "  pm.collectionVariables.set('checkIn', d(30)); pm.collectionVariables.set('checkOut', d(32)); pm.collectionVariables.set('checkOutLater', d(33));",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "propertyId",
+      "value": ""
+    },
+    {
+      "key": "roomTypeId",
+      "value": ""
+    },
+    {
+      "key": "bookingId",
+      "value": ""
+    },
+    {
+      "key": "externalRef",
+      "value": ""
+    },
+    {
+      "key": "apiKeyId",
+      "value": ""
+    },
+    {
+      "key": "checkIn",
+      "value": ""
+    },
+    {
+      "key": "checkOut",
+      "value": ""
+    },
+    {
+      "key": "checkOutLater",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Admin - API keys",
+      "description": "Sign in with a PMS user who can edit Role Permissions (admins always can). HTTPS only. Set **pmsUsername** and **pmsPassword** in your environment first.",
+      "item": [
+        {
+          "name": "Create API key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/api-keys",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "api-keys"
+              ]
+            },
+            "description": "Creates a key and saves it to `{{apiKey}}` automatically. The full key is returned **only in this response**.\n\nScopes: availability:read, rates:read, bookings:read, bookings:read_all, bookings:write, bookings:confirm, bookings:cancel, bookings:waive.\nOptional: property_ids (empty = all), agent_id (contract rates), booking_source, allowed_ips, allowed_origins, rate_limit_per_minute, notes.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Postman - {{$timestamp}}\",\n  \"scopes\": [\n    \"availability:read\",\n    \"rates:read\",\n    \"bookings:read\",\n    \"bookings:write\",\n    \"bookings:cancel\"\n  ],\n  \"property_ids\": [],\n  \"booking_source\": \"postman\",\n  \"notes\": \"Created from Postman\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{pmsUsername}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pmsPassword}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('key created', function () { pm.expect(pm.response.code).to.eql(201); });",
+                  "if (j.ok) {",
+                  "  pm.environment.set('apiKey', j.data.api_key);",
+                  "  pm.collectionVariables.set('apiKey', j.data.api_key);",
+                  "  pm.collectionVariables.set('apiKeyId', j.data.id);",
+                  "  console.log('Saved new API key to {{apiKey}} - it is shown only once:', j.data.api_key);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List API keys",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/api-keys",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "api-keys"
+              ]
+            },
+            "description": "All keys with their access. The secret part of a key is never returned.",
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{pmsUsername}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pmsPassword}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('ok', function () { pm.expect(pm.response.json().ok).to.eql(true); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Catalogue",
+      "item": [
+        {
+          "name": "API status (no key)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": []
+            },
+            "description": "Confirms the API is reachable and the database is connected.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('ok', function () { pm.expect(pm.response.json().ok).to.eql(true); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ping (check key)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ping",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ping"
+              ]
+            },
+            "description": "Shows which key you are using and its scopes."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('ok', function () { pm.expect(pm.response.json().ok).to.eql(true); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Meal plans",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/meal-plans",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "meal-plans"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('ok', function () { pm.expect(pm.response.json().ok).to.eql(true); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Properties",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/properties",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "properties"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('ok', function () { pm.expect(pm.response.json().ok).to.eql(true); });",
+                  "const j = pm.response.json(); if (j.ok && j.data.length && !pm.collectionVariables.get('propertyId')) pm.collectionVariables.set('propertyId', j.data[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Property",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/properties/{{propertyId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "properties",
+                "{{propertyId}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('ok', function () { pm.expect(pm.response.json().ok).to.eql(true); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Room types",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/properties/{{propertyId}}/room-types",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "properties",
+                "{{propertyId}}",
+                "room-types"
+              ]
+            },
+            "description": "Also stores the first room type in `{{roomTypeId}}` for the next requests."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('ok', function () { pm.expect(pm.response.json().ok).to.eql(true); });",
+                  "const j = pm.response.json(); if (j.ok && j.data.length) pm.collectionVariables.set('roomTypeId', j.data[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Availability",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/availability?property_id={{propertyId}}&check_in={{checkIn}}&check_out={{checkOut}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "availability"
+              ],
+              "query": [
+                {
+                  "key": "property_id",
+                  "value": "{{propertyId}}"
+                },
+                {
+                  "key": "check_in",
+                  "value": "{{checkIn}}"
+                },
+                {
+                  "key": "check_out",
+                  "value": "{{checkOut}}"
+                }
+              ]
+            },
+            "description": "Free rooms per room type per night. Add `room_type_id` to narrow it down."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('ok', function () { pm.expect(pm.response.json().ok).to.eql(true); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Rates",
+      "item": [
+        {
+          "name": "Quote - one room",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/rates/quote?property_id={{propertyId}}&room_type_id={{roomTypeId}}&check_in={{checkIn}}&check_out={{checkOut}}&adults=2&children=0&meal_plan=BB",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rates",
+                "quote"
+              ],
+              "query": [
+                {
+                  "key": "property_id",
+                  "value": "{{propertyId}}"
+                },
+                {
+                  "key": "room_type_id",
+                  "value": "{{roomTypeId}}"
+                },
+                {
+                  "key": "check_in",
+                  "value": "{{checkIn}}"
+                },
+                {
+                  "key": "check_out",
+                  "value": "{{checkOut}}"
+                },
+                {
+                  "key": "adults",
+                  "value": "2"
+                },
+                {
+                  "key": "children",
+                  "value": "0"
+                },
+                {
+                  "key": "meal_plan",
+                  "value": "BB"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('ok', function () { pm.expect(pm.response.json().ok).to.eql(true); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Quote - several rooms",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/rates/quote",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "rates",
+                "quote"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"property_id\": \"{{propertyId}}\",\n  \"check_in\": \"{{checkIn}}\",\n  \"check_out\": \"{{checkOut}}\",\n  \"meal_plan\": \"BB\",\n  \"rooms\": [\n    {\n      \"room_type_id\": \"{{roomTypeId}}\",\n      \"adults\": 2\n    },\n    {\n      \"room_type_id\": \"{{roomTypeId}}\",\n      \"adults\": 2,\n      \"children\": 1\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('ok', function () { pm.expect(pm.response.json().ok).to.eql(true); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Bookings",
+      "description": "Bookings made here are REAL bookings in the PMS. Use a test property or cancel them afterwards.",
+      "item": [
+        {
+          "name": "Create booking",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Reuse the same value when retrying the same request, so it can't run twice."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bookings"
+              ]
+            },
+            "description": "Stores the new booking in `{{bookingId}}`. Status is provisional unless the key has bookings:confirm.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"property_id\": \"{{propertyId}}\",\n  \"check_in\": \"{{checkIn}}\",\n  \"check_out\": \"{{checkOut}}\",\n  \"meal_plan\": \"BB\",\n  \"external_ref\": \"POSTMAN-{{$timestamp}}\",\n  \"expected_arrival_time\": \"14:30\",\n  \"notes\": \"Test booking from Postman\",\n  \"guest\": {\n    \"firstname\": \"Test\",\n    \"lastname\": \"Guest\",\n    \"email\": \"test.guest@example.com\",\n    \"phone\": \"+263770000000\"\n  },\n  \"rooms\": [\n    {\n      \"room_type_id\": \"{{roomTypeId}}\",\n      \"adults\": 2,\n      \"children\": 0\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "pm.test('created', function () { pm.expect(pm.response.code).to.eql(201); });",
+                  "if (j.ok) { pm.collectionVariables.set('bookingId', j.data.id); pm.collectionVariables.set('externalRef', j.data.external_ref); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get booking",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/bookings/{{bookingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bookings",
+                "{{bookingId}}"
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('ok', function () { pm.expect(pm.response.json().ok).to.eql(true); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Find by external_ref",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/bookings?external_ref={{externalRef}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bookings"
+              ],
+              "query": [
+                {
+                  "key": "external_ref",
+                  "value": "{{externalRef}}"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('ok', function () { pm.expect(pm.response.json().ok).to.eql(true); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Change booking (notes, guest)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Reuse the same value when retrying the same request, so it can't run twice."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bookings/{{bookingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bookings",
+                "{{bookingId}}"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notes\": \"Late arrival - around 21:00\",\n  \"expected_arrival_time\": \"21:00\",\n  \"guest\": {\n    \"firstname\": \"Test\",\n    \"lastname\": \"Guest\",\n    \"email\": \"updated@example.com\",\n    \"phone\": \"+263770000001\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('ok', function () { pm.expect(pm.response.json().ok).to.eql(true); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Change booking dates",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Reuse the same value when retrying the same request, so it can't run twice."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bookings/{{bookingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bookings",
+                "{{bookingId}}"
+              ]
+            },
+            "description": "Re-checks availability and reprices. Refused once the folio has payments or charges.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"check_out\": \"{{checkOutLater}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('ok', function () { pm.expect(pm.response.json().ok).to.eql(true); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cancel booking",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Reuse the same value when retrying the same request, so it can't run twice."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bookings/{{bookingId}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bookings",
+                "{{bookingId}}",
+                "cancel"
+              ]
+            },
+            "description": "keep_balance keeps any balance (lodge policy). waive_all / waive_and_charge_policy need bookings:waive.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Test booking from Postman\",\n  \"policy_action\": \"keep_balance\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('ok', function () { pm.expect(pm.response.json().ok).to.eql(true); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Clean up",
+      "description": "Run last. Revokes the key created in step 1.",
+      "item": [
+        {
+          "name": "Revoke API key",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/api-keys/{{apiKeyId}}/revoke",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "api-keys",
+                "{{apiKeyId}}",
+                "revoke"
+              ]
+            },
+            "description": "Stops the key working immediately. Uses `{{apiKeyId}}` from Create API key - change it to revoke another.",
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{pmsUsername}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "{{pmsPassword}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('ok', function () { pm.expect(pm.response.json().ok).to.eql(true); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

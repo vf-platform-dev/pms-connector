@@ -6,3 +6,5 @@ secrets/
 node_modules/
 __pycache__/
 .DS_Store
+# Filled-in Postman environments (may hold passwords or keys)
+*.local.json
