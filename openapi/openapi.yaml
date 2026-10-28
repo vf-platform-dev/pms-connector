@@ -1,0 +1,238 @@
+openapi: 3.0.3
+info:
+  title: RoomZ PMS API
+  version: "1.0"
+  description: |
+    Availability, rates and bookings for RoomZ PMS properties.
+    Authenticate with `Authorization: Bearer <key>`. Send `Idempotency-Key` on writes.
+    Every response is wrapped as `{ok, data | error, meta.request_id}`.
+
+    Key management (`/admin/api-keys`) instead uses a PMS admin username and
+    password over HTTP Basic Auth, HTTPS only.
+servers:
+  - url: https://www.macsoftlabs.co.zw/mukusu/api/v1
+    description: Mukusu
+  - url: https://{host}/{install}/api/v1
+    description: Any RoomZ install
+    variables:
+      host: { default: www.macsoftlabs.co.zw }
+      install: { default: mukusu }
+security:
+  - bearerAuth: []
+
+paths:
+  /:
+    get:
+      summary: API status (no key needed)
+      security: []
+      responses: { "200": { $ref: "#/components/responses/Ok" } }
+  /admin/api-keys:
+    get:
+      summary: List API keys (never returns the secret)
+      tags: [Admin]
+      security: [ { pmsAdmin: [] } ]
+      responses: { "200": { $ref: "#/components/responses/Ok" }, "401": { $ref: "#/components/responses/Error" }, "403": { $ref: "#/components/responses/Error" } }
+    post:
+      summary: Create an API key - the full key is in this response only
+      tags: [Admin]
+      security: [ { pmsAdmin: [] } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ApiKeyCreate" } } }
+      responses: { "201": { $ref: "#/components/responses/Ok" }, "422": { $ref: "#/components/responses/Error" } }
+  /admin/api-keys/{id}/revoke:
+    post:
+      summary: Revoke an API key immediately
+      tags: [Admin]
+      security: [ { pmsAdmin: [] } ]
+      parameters: [ { $ref: "#/components/parameters/Id" } ]
+      responses: { "200": { $ref: "#/components/responses/Ok" }, "404": { $ref: "#/components/responses/Error" } }
+  /ping:
+    get:
+      summary: Check the key and list its scopes
+      responses: { "200": { $ref: "#/components/responses/Ok" }, "401": { $ref: "#/components/responses/Error" } }
+  /meal-plans:
+    get:
+      summary: Meal plan codes
+      responses: { "200": { $ref: "#/components/responses/Ok" } }
+  /properties:
+    get:
+      summary: Properties this key can access
+      responses: { "200": { $ref: "#/components/responses/Ok" } }
+  /properties/{id}:
+    get:
+      summary: One property
+      parameters: [ { $ref: "#/components/parameters/Id" } ]
+      responses: { "200": { $ref: "#/components/responses/Ok" }, "404": { $ref: "#/components/responses/Error" } }
+  /properties/{id}/room-types:
+    get:
+      summary: Room types with occupancy and room counts
+      parameters: [ { $ref: "#/components/parameters/Id" } ]
+      responses: { "200": { $ref: "#/components/responses/Ok" } }
+  /availability:
+    get:
+      summary: Free rooms per room type per night
+      parameters:
+        - { name: property_id, in: query, required: true, schema: { type: integer } }
+        - { name: check_in, in: query, required: true, schema: { type: string, format: date } }
+        - { name: check_out, in: query, required: true, schema: { type: string, format: date } }
+        - { name: room_type_id, in: query, schema: { type: integer } }
+      responses: { "200": { $ref: "#/components/responses/Ok" }, "422": { $ref: "#/components/responses/Error" } }
+  /rates/quote:
+    get:
+      summary: Quote one room
+      parameters:
+        - { name: property_id, in: query, required: true, schema: { type: integer } }
+        - { name: room_type_id, in: query, required: true, schema: { type: integer } }
+        - { name: check_in, in: query, required: true, schema: { type: string, format: date } }
+        - { name: check_out, in: query, required: true, schema: { type: string, format: date } }
+        - { name: adults, in: query, schema: { type: integer, default: 2 } }
+        - { name: children, in: query, schema: { type: integer, default: 0 } }
+        - { name: meal_plan, in: query, schema: { type: string, default: BB } }
+        - { name: charge_basis, in: query, schema: { type: string, enum: [PER_PERSON, PER_ROOM] } }
+      responses: { "200": { $ref: "#/components/responses/Ok" } }
+    post:
+      summary: Quote several rooms
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/QuoteRequest" } } }
+      responses: { "200": { $ref: "#/components/responses/Ok" } }
+  /bookings:
+    post:
+      summary: Create a booking
+      parameters: [ { $ref: "#/components/parameters/IdempotencyKey" } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/BookingCreate" } } }
+      responses:
+        "201": { $ref: "#/components/responses/Ok" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+    get:
+      summary: Find a booking by your own reference
+      parameters: [ { name: external_ref, in: query, required: true, schema: { type: string } } ]
+      responses: { "200": { $ref: "#/components/responses/Ok" } }
+  /bookings/{id}:
+    get:
+      summary: Read a booking
+      parameters: [ { $ref: "#/components/parameters/Id" } ]
+      responses: { "200": { $ref: "#/components/responses/Ok" }, "404": { $ref: "#/components/responses/Error" } }
+    patch:
+      summary: Change guest details, notes, status or dates
+      parameters: [ { $ref: "#/components/parameters/Id" }, { $ref: "#/components/parameters/IdempotencyKey" } ]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/BookingPatch" } } }
+      responses: { "200": { $ref: "#/components/responses/Ok" }, "409": { $ref: "#/components/responses/Error" } }
+  /bookings/{id}/cancel:
+    post:
+      summary: Cancel a booking
+      parameters: [ { $ref: "#/components/parameters/Id" }, { $ref: "#/components/parameters/IdempotencyKey" } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string }
+                policy_action: { type: string, enum: [keep_balance, waive_all, waive_and_charge_policy], default: keep_balance }
+                policy_charge: { type: number }
+      responses: { "200": { $ref: "#/components/responses/Ok" }, "409": { $ref: "#/components/responses/Error" } }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, description: "API key, e.g. rz_1a2b3c4d_..." }
+    pmsAdmin: { type: http, scheme: basic, description: "PMS username + password of a user who can edit Role Permissions. HTTPS only." }
+  parameters:
+    Id: { name: id, in: path, required: true, schema: { type: integer } }
+    IdempotencyKey: { name: Idempotency-Key, in: header, schema: { type: string, maxLength: 100 } }
+  responses:
+    Ok:
+      description: Success
+      content: { application/json: { schema: { $ref: "#/components/schemas/OkEnvelope" } } }
+    Error:
+      description: Error
+      content: { application/json: { schema: { $ref: "#/components/schemas/ErrorEnvelope" } } }
+  schemas:
+    OkEnvelope:
+      type: object
+      properties:
+        ok: { type: boolean, example: true }
+        data: {}
+        meta: { type: object, properties: { request_id: { type: string } } }
+    ErrorEnvelope:
+      type: object
+      properties:
+        ok: { type: boolean, example: false }
+        error:
+          type: object
+          properties:
+            code: { type: string, example: no_availability }
+            message: { type: string }
+            details: { type: object }
+        meta: { type: object, properties: { request_id: { type: string } } }
+    ApiKeyCreate:
+      type: object
+      required: [name, scopes]
+      properties:
+        name: { type: string, example: Lodge website }
+        scopes:
+          type: array
+          items: { type: string, enum: [availability:read, rates:read, bookings:read, bookings:read_all, bookings:write, bookings:confirm, bookings:cancel, bookings:waive] }
+        property_ids: { type: array, items: { type: integer }, description: "Empty = all properties" }
+        agent_id: { type: integer, description: "Quotes and bookings use this agent's contract rates" }
+        booking_source: { type: string, example: website }
+        allowed_ips: { type: array, items: { type: string } }
+        allowed_origins: { type: array, items: { type: string }, description: "Browser origins for CORS (read-only keys only)" }
+        rate_limit_per_minute: { type: integer }
+        notes: { type: string }
+    Guest:
+      type: object
+      required: [firstname, lastname]
+      properties:
+        firstname: { type: string }
+        lastname: { type: string }
+        email: { type: string, format: email }
+        phone: { type: string }
+    RoomRequest:
+      type: object
+      required: [room_type_id, adults]
+      properties:
+        room_type_id: { type: integer }
+        adults: { type: integer, minimum: 0, maximum: 20 }
+        children: { type: integer, minimum: 0, maximum: 20, default: 0 }
+        guest: { $ref: "#/components/schemas/Guest" }
+    QuoteRequest:
+      type: object
+      required: [property_id, check_in, check_out, rooms]
+      properties:
+        property_id: { type: integer }
+        check_in: { type: string, format: date }
+        check_out: { type: string, format: date }
+        meal_plan: { type: string, default: BB }
+        charge_basis: { type: string, enum: [PER_PERSON, PER_ROOM] }
+        rooms: { type: array, items: { $ref: "#/components/schemas/RoomRequest" } }
+    BookingCreate:
+      allOf:
+        - $ref: "#/components/schemas/QuoteRequest"
+        - type: object
+          required: [guest]
+          properties:
+            guest: { $ref: "#/components/schemas/Guest" }
+            status: { type: string, enum: [provisional, confirmed] }
+            external_ref: { type: string, maxLength: 100 }
+            expected_arrival_time: { type: string, example: "14:30" }
+            notes: { type: string }
+            voucher_no: { type: string }
+    BookingPatch:
+      type: object
+      properties:
+        guest: { $ref: "#/components/schemas/Guest" }
+        notes: { type: string }
+        voucher_no: { type: string }
+        expected_arrival_time: { type: string }
+        status: { type: string, enum: [provisional, confirmed] }
+        check_in: { type: string, format: date }
+        check_out: { type: string, format: date }

@@ -1,0 +1,15 @@
+name: Validate docs
+on: [push, pull_request]
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: OpenAPI spec is valid
+        run: |
+          pip install openapi-spec-validator==0.7.1
+          openapi-spec-validator openapi/openapi.yaml
+      - name: Postman files are valid JSON
+        run: for f in postman/*.json; do python -m json.tool "$f" > /dev/null && echo "ok $f"; done
